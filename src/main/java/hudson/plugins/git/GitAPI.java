@@ -540,4 +540,15 @@ public class GitAPI implements IGitAPI {
         return ret;
         
     }
+
+	public void commitAll(String msg) throws GitException {
+		ArgumentListBuilder args = new ArgumentListBuilder();
+		args.add(getGitExe(), "commit", "-a", "-m", msg);
+
+		try {
+			launchCommand(args.toCommandArray());
+		} catch (GitException e) {
+			throw new GitException("Cannot commit all", e);
+		}
+	}
 }
