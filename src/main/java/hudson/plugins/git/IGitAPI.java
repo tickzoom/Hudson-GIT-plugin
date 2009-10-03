@@ -59,7 +59,7 @@ public interface IGitAPI {
 	void branch(String name) throws GitException;
 
     void commit(File f) throws GitException;
-	void commitAll(String string) throws GitException;
+	void commit(String... args) throws GitException;
 
     ObjectId mergeBase(ObjectId sha1, ObjectId sha12);
 }

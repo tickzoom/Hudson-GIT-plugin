@@ -527,6 +527,16 @@ public class GitAPI implements IGitAPI {
         }
     }
 
+	public void commit(String... extraArgs) throws GitException {
+		ArgumentListBuilder args = new ArgumentListBuilder("commit");
+		args.add(extraArgs);
+		try {
+			launchCommand(args.toCommandArray());
+		} catch (GitException e) {
+			throw new GitException("Failed to execute commit successfully", e);
+		}
+	}
+
     public void fetch(RemoteConfig remoteRepository) throws GitException
     {
         // Assume there is only 1 URL / refspec for simplicity
@@ -609,14 +619,4 @@ public class GitAPI implements IGitAPI {
         }
     }
 
-	public void commitAll(String msg) throws GitException {
-		ArgumentListBuilder args = new ArgumentListBuilder();
-		args.add(getGitExe(), "commit", "-a", "-m", msg);
-
-		try {
-			launchCommand(args.toCommandArray());
-		} catch (GitException e) {
-			throw new GitException("Cannot commit all", e);
-		}
-	}
 }
