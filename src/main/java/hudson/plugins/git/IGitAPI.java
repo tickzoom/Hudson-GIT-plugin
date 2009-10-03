@@ -42,6 +42,8 @@ public interface IGitAPI {
     List<ObjectId> revListBranch(String branchId) throws GitException;
     List<ObjectId> revListAll() throws GitException;
 
+    List<ObjectId> revList(String...args) throws GitException;
+    
     String describe(String commitIsh) throws GitException;
 
     List<Tag> getTagsOnCommit(String revName) throws GitException, IOException;
@@ -57,6 +59,7 @@ public interface IGitAPI {
 	void branch(String name) throws GitException;
 
     void commit(File f) throws GitException;
+	void commitAll(String string) throws GitException;
 
     ObjectId mergeBase(ObjectId sha1, ObjectId sha12);
 }
