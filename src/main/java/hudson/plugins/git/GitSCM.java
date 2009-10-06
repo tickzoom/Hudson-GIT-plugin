@@ -50,6 +50,8 @@ import org.spearce.jgit.lib.RepositoryConfig;
 import org.spearce.jgit.transport.RefSpec;
 import org.spearce.jgit.transport.RemoteConfig;
 
+import com.sun.corba.se.spi.legacy.connection.GetEndPointInfoAgainException;
+
 /**
  * Git SCM.
  *
@@ -193,6 +195,7 @@ public class GitSCM extends SCM implements Serializable {
 
     private String getSingleBranch(AbstractBuild<?, ?> build) {
         // if we have multiple branches skip to advanced usecase
+
         if (getBranches().size() != 1 || getRepositories().size() != 1)
             return null;
 
@@ -223,6 +226,7 @@ public class GitSCM extends SCM implements Serializable {
 	{
 	    // Poll for changes. Are there any unbuilt revisions that Hudson ought to build ?
 
+
 		final String gitExe = getDescriptor().getGitExe();
 
 		AbstractBuild lastBuild = (AbstractBuild)project.getLastBuild();
@@ -239,44 +243,43 @@ public class GitSCM extends SCM implements Serializable {
             listener.getLogger().println("[poll] Last Built Revision: " + buildData.lastBuild.revision );
         }
 
-        final String singleBranch = getSingleBranch(lastBuild);
-
+        /*
 		EnvVars tmp = new EnvVars();
         try {
-            tmp = Computer.currentComputer().getEnvironment();
+            tmp = lastBuild.getEnvironment(listener);
         } catch (InterruptedException e) {
-            listener.error("Interrupted exception getting environment .. trying empty environment");
+            listener.error("Interrupted exception getting environment .. using empty environment");
         }
         final EnvVars environment = tmp;
+		*/
+        
+        final String singleBranch = getSingleBranch(lastBuild);
 
+        // listener.getLogger().println("[poll] Branch: " + singleBranch);
+        
 		boolean pollChangesResult = workspace.act(new FileCallable<Boolean>() {
+			
 			private static final long serialVersionUID = 1L;
 
-			public Boolean invoke(File localWorkspace, VirtualChannel channel)
-					throws IOException {
-                IGitAPI git = new GitAPI(gitExe, new FilePath(localWorkspace), listener, environment);
+			public Boolean invoke(File localWorkspace, VirtualChannel channel) throws IOException {
 
-
-				IBuildChooser buildChooser = new BuildChooser(GitSCM.this,git,new GitUtils(listener,git), buildData );
-
-				if (git.hasGitRepo()) {
-					// Repo is there - do a fetch
-					listener.getLogger().println("Fetching changes from the remote Git repositories");
-
-					// Fetch updates
-					for (RemoteConfig remoteRepository : getRepositories()) {
-						fetchFrom(git, localWorkspace, listener, remoteRepository);
+				    FilePath ws = new FilePath(localWorkspace);
+				    
+	                IGitAPI git = new GitAPI(gitExe, ws, listener, new EnvVars());
+	
+					IBuildChooser buildChooser = new BuildChooser(GitSCM.this,git,new GitUtils(listener,git), buildData );
+	
+					if (git.hasGitRepo()) {
+						// Fetch updates
+						for (RemoteConfig remoteRepository : getRepositories()) {
+							fetchFrom(git, localWorkspace, listener, remoteRepository);
+						}
+						Collection<Revision> candidates = buildChooser.getCandidateRevisions(true, singleBranch);
+						return (candidates.size() > 0);
+					} else {
+						listener.getLogger().println("No Git repository yet, an initial checkout is required");
+						return true;
 					}
-
-					listener.getLogger().println("Polling for changes in");
-
-					Collection<Revision> candidates = buildChooser.getCandidateRevisions(true, singleBranch);
-
-					return (candidates.size() > 0);
-				} else {
-					listener.getLogger().println("No Git repository yet, an initial checkout is required");
-					return true;
-				}
 			}
 		});
 
@@ -295,10 +298,10 @@ public class GitSCM extends SCM implements Serializable {
 	private void fetchFrom(IGitAPI git, File workspace, TaskListener listener,
 	        RemoteConfig remoteRepository) {
 		try {
+			listener.getLogger().println("Fetching from " + remoteRepository.getName());
 			git.fetch(remoteRepository);
 
-			List<IndexEntry> submodules = new GitUtils(listener, git)
-					.getSubmodules("HEAD");
+			List<IndexEntry> submodules = new GitUtils(listener, git).getSubmodules("HEAD");
 
 			for (IndexEntry submodule : submodules) {
 				try {
@@ -666,7 +669,6 @@ public class GitSCM extends SCM implements Serializable {
 
                 if( histories > 1 )
                     listener.getLogger().println("Warning : There are multiple branch changesets here");
-
 
                 buildChooser.revisionBuilt(revToBuild, buildNumber, null);
 

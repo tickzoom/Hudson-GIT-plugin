@@ -49,9 +49,12 @@ public class GitAPI implements IGitAPI {
         this.environment = environment;
         PrintStream log = listener.getLogger();
         log.println("GitAPI created");
+
+        /*
         for (Map.Entry<String, String> ent : environment.entrySet()) {
             log.println("Env: " + ent.getKey() + "=" + ent.getValue());
         }
+        */
 
         launcher = new LocalLauncher(listener);
 
