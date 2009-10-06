@@ -194,6 +194,7 @@ public class GitSCM extends SCM implements Serializable {
 	}
 
     private String getSingleBranch(AbstractBuild<?, ?> build) {
+
         // if we have multiple branches skip to advanced usecase
 
         if (getBranches().size() != 1 || getRepositories().size() != 1)
@@ -243,7 +244,7 @@ public class GitSCM extends SCM implements Serializable {
             listener.getLogger().println("[poll] Last Built Revision: " + buildData.lastBuild.revision );
         }
 
-        /*
+        /* TODO: Breaks serialization somehow.
 		EnvVars tmp = new EnvVars();
         try {
             tmp = lastBuild.getEnvironment(listener);

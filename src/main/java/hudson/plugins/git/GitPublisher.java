@@ -114,7 +114,7 @@ public class GitPublisher extends Publisher implements Serializable {
         return canPerform;
     }
 
-    @Extension
+    // Extension
     public static class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
         public DescriptorImpl() {

@@ -8,11 +8,15 @@
   </parent>
 
   <artifactId>git</artifactId>
-  <version>0.7.4-SNAPSHOT</version>
+  <version>0.7.4-SNAPSHOT-WITH-COMMIT-PUBLISHER</version>
   <packaging>hpi</packaging>
   <name>Hudson GIT plugin</name>
   <description>Integrates Hudson to GIT SCM</description>
   <url>http://wiki.hudson-ci.org/display/HUDSON/Git+Plugin</url>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
 
   <repositories>
     <repository>

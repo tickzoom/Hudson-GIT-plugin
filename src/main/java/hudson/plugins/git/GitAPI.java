@@ -391,6 +391,18 @@ public class GitAPI implements IGitAPI {
         // That are possible.
     }
 
+    public void push(String... extraArgs) throws GitException {
+        ArgumentListBuilder args = new ArgumentListBuilder("push");
+        args.add(extraArgs);
+		try {
+			launchCommand(args.toCommandArray());
+		} catch (GitException e) {
+			throw new GitException("Failed to execute push successfully", e);
+		}
+        // Ignore output for now as there's many different formats
+        // That are possible.
+    }
+
     private List<Branch> parseBranches(String fos) throws GitException
     {
         // TODO: git branch -a -v --abbrev=0 would do this in one shot..

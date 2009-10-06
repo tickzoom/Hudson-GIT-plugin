@@ -28,6 +28,7 @@ public interface IGitAPI {
 
     void fetch() throws GitException;
     void push(RemoteConfig repository, String revspec) throws GitException;
+    void push(String... args) throws GitException;
     void merge(String revSpec) throws GitException;
     void clone(RemoteConfig source) throws GitException;
     void clean() throws GitException;
