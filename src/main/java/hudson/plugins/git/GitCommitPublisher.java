@@ -109,15 +109,17 @@ public class GitCommitPublisher extends Publisher implements Serializable {
 									remoteBranch = "master";
 								}
 
-								listener.getLogger().println("Commiting changes and pushing result of build number " + tag + " to "+ remoteName + ":" + remoteBranch);
+								listener.getLogger().println("Commiting changes, tagging and pushing result of build number " + tag + " to "+ remoteName + ":" + remoteBranch);
 
 								// Add anything new
 								git.add(".");
 
 								if (git.hasFilesToCommit()) {
 									git.commit("-a", "-m", "Build: " + tag);
+								} else {
+									listener.getLogger().println("Nothing to commit. No modifications to working tree");
 								}
-								
+
 								git.tag(tag, "Build: " + tag);
 
 								List<ObjectId> revs = git.revList("--max-count=1", "HEAD");
