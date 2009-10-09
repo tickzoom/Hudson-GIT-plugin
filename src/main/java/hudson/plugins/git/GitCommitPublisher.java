@@ -113,7 +113,11 @@ public class GitCommitPublisher extends Publisher implements Serializable {
 
 								// Add anything new
 								git.add(".");
-								git.commit("-a", "-m", "Build: " + tag);
+
+								if (git.hasFilesToCommit()) {
+									git.commit("-a", "-m", "Build: " + tag);
+								}
+								
 								git.tag(tag, "Build: " + tag);
 
 								List<ObjectId> revs = git.revList("--max-count=1", "HEAD");

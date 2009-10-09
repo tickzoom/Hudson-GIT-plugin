@@ -63,4 +63,6 @@ public interface IGitAPI {
 	void commit(String... args) throws GitException;
 
     ObjectId mergeBase(ObjectId sha1, ObjectId sha12);
+    
+    boolean hasFilesToCommit() throws GitException;
 }

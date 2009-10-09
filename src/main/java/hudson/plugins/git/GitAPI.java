@@ -50,12 +50,6 @@ public class GitAPI implements IGitAPI {
         PrintStream log = listener.getLogger();
         log.println("GitAPI created");
 
-        /*
-        for (Map.Entry<String, String> ent : environment.entrySet()) {
-            log.println("Env: " + ent.getKey() + "=" + ent.getValue());
-        }
-        */
-
         launcher = new LocalLauncher(listener);
 
     }
@@ -353,6 +347,25 @@ public class GitAPI implements IGitAPI {
         return launchCommand(new ArgumentListBuilder(args));
     }
 
+    private int launchStatusCommand(String... extraArgs) throws GitException {
+        int status = 0;
+        
+        ArgumentListBuilder args = new ArgumentListBuilder();
+        ByteArrayOutputStream fos = new ByteArrayOutputStream();
+
+        try {
+            args.add(getGitExe());
+            args.add(extraArgs);
+
+            status = launcher.launch().cmds(args.toCommandArray()).
+                    envs(environment).stdout(fos).pwd(workspace).join();
+            
+        } catch (Exception e) {
+            throw new GitException("Error performing " + StringUtils.join(args.toCommandArray(), " "), e);
+        }
+        return status;
+    }
+
     /**
      * @param args
      * @param workDir
@@ -496,6 +509,10 @@ public class GitAPI implements IGitAPI {
 
     public List<ObjectId> revListBranch(String branchId) throws GitException {
         return revList(branchId);
+    }
+    
+    public boolean hasFilesToCommit() throws GitException {
+    	return (launchStatusCommand("diff-index", "--exit-code", "HEAD") != 0);
     }
 
     public List<ObjectId> revList(String... extraArgs) throws GitException {
