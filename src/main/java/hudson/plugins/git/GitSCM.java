@@ -50,7 +50,7 @@ import org.spearce.jgit.lib.RepositoryConfig;
 import org.spearce.jgit.transport.RefSpec;
 import org.spearce.jgit.transport.RemoteConfig;
 
-import com.sun.corba.se.spi.legacy.connection.GetEndPointInfoAgainException;
+//import com.sun.corba.se.spi.legacy.connection.GetEndPointInfoAgainException;
 
 /**
  * Git SCM.
@@ -598,7 +598,7 @@ public class GitSCM extends SCM implements Serializable {
 				});
 				BuildData returningBuildData = (BuildData)returnData[1];
 				build.addAction(returningBuildData);
-				return changeLogResult((String) returnData[0], changelogFile);
+				return changeLogResult(((StringBuilder) returnData[0]).toString(), changelogFile);
 			}
 		}
 
