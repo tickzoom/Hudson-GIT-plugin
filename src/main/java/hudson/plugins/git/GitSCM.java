@@ -301,7 +301,9 @@ public class GitSCM extends SCM implements Serializable {
 		try {
 			listener.getLogger().println("Fetching from " + remoteRepository.getName());
 			git.fetch(remoteRepository);
+//			git.checkout("FETCH_HEAD");
 
+			/*** Submodules needs work. Better to use subtrees.
 			List<IndexEntry> submodules = new GitUtils(listener, git).getSubmodules("HEAD");
 
 			for (IndexEntry submodule : submodules) {
@@ -322,6 +324,7 @@ public class GitSCM extends SCM implements Serializable {
 				}
 
 			}
+			***/
 		} catch (GitException ex) {
 			listener.error(
 					"Problem fetching from " + remoteRepository.getName()
@@ -524,6 +527,7 @@ public class GitSCM extends SCM implements Serializable {
 						    environment = new EnvVars();
 						}
                         IGitAPI git = new GitAPI(gitExe, new FilePath(localWorkspace), listener, environment);
+						GitUtils gu = new GitUtils(listener,git);
 
                         IBuildChooser buildChooser = new BuildChooser(GitSCM.this,git,new GitUtils(listener,git), buildData );
 
@@ -535,7 +539,26 @@ public class GitSCM extends SCM implements Serializable {
 								"Merging " + revToBuild + " onto "
 										+ mergeOptions.getMergeTarget());
 
-						// checkout origin/blah
+						// Create the local merge branch if it does not already
+						// exist.
+						List<Branch> branches = git.getBranches();
+						listener.getLogger().println( " -- branches in workspace");
+						boolean foundMergeBranch = false;
+						for( int i=0; i<branches.size(); i++) {
+							listener.getLogger().println( branches.get(i).name);
+							if( branches.get(i).name.equals(mergeOptions.getMergeTarget())) {
+								foundMergeBranch = true;
+							}
+						}
+						if( !foundMergeBranch) {
+							git.branch(mergeOptions.getMergeTarget());
+						}
+						// NOTE: This is critical to have an actual branch checked
+						// out rather than only a commit so that the merge result
+						// will work even when the build itself also commits before
+						// the publish runs (if enabled). Since the user provides
+						// a name for the branch to merge, that name is used.
+						git.checkout(mergeOptions.getMergeTarget());
 						ObjectId target = git.revParse(mergeOptions.getMergeTarget());
 						git.checkout(target.name());
 
@@ -553,11 +576,8 @@ public class GitSCM extends SCM implements Serializable {
 							// branch.
 							git.checkout(revToBuild.getSha1().name());
 
-							git
-									.tag(buildnumber, "Hudson Build #"
+							git.tag(buildnumber, "Hudson Build #"
 											+ buildNumber);
-
-
 
 							buildChooser.revisionBuilt(revToBuild, buildNumber, Result.FAILURE);
 
@@ -589,7 +609,7 @@ public class GitSCM extends SCM implements Serializable {
 						}
 
 						Build buildData = buildChooser.revisionBuilt(revToBuild, buildNumber, null);
-						GitUtils gu = new GitUtils(listener,git);
+//						target = git.revParse(mergeOptions.getMergeTarget());
 						buildData.mergeRevision = gu.getRevisionForSHA1(target);
 
 						// Fetch the diffs into the changelog file
@@ -800,9 +820,12 @@ public class GitSCM extends SCM implements Serializable {
             }
 
             PreBuildMergeOptions mergeOptions = new PreBuildMergeOptions();
-            if( req.getParameter("git.mergeTarget") != null && req.getParameter("git.mergeTarget").trim().length()  > 0 )
+            String mergeTarget = req.getParameter("git.mergeTarget"); 
+            if( mergeTarget != null && mergeTarget.trim().length()  > 0 )
             {
-            	mergeOptions.setMergeTarget(req.getParameter("git.mergeTarget"));
+            	mergeOptions.setMergeTarget(mergeTarget);
+            	BranchSpec branchSpec = new BranchSpec(mergeTarget);
+            	
             }
 
 			Collection<SubmoduleConfig> submoduleCfg = new ArrayList<SubmoduleConfig>();

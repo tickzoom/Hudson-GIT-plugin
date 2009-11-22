@@ -8,6 +8,7 @@ import hudson.model.FreeStyleProject;
 import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.model.User;
+import hudson.tasks.BatchFile;
 import hudson.util.StreamTaskListener;
 
 import java.io.File;
@@ -24,10 +25,12 @@ import org.spearce.jgit.lib.PersonIdent;
 public class GitSCMTest extends HudsonTestCase {
 
     private File workDir;
+    private File remoteDir;
     private GitAPI git;
     private TaskListener listener;
     private EnvVars envVars;
     private FilePath workspace;
+    private FilePath remoteWorkspace;
 
     private final PersonIdent johnDoe = new PersonIdent("John Doe", "john@doe.com");
     private final PersonIdent janeDoe = new PersonIdent("Jane Doe", "jane@doe.com");
@@ -36,11 +39,13 @@ public class GitSCMTest extends HudsonTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         workDir = createTmpDir();
+        remoteDir = createTmpDir();
         listener = new StreamTaskListener();
         envVars = new EnvVars();
         setAuthor(johnDoe);
         setCommitter(johnDoe);
         workspace = new FilePath(workDir);
+        remoteWorkspace = new FilePath(remoteDir);
         git = new GitAPI("git", workspace, listener, envVars);
         git.init();
     }
@@ -82,6 +87,26 @@ public class GitSCMTest extends HudsonTestCase {
         assertTrue(project.getWorkspace().child(commitFile2).exists());
         assertBuildStatusSuccess(build2);
         assertFalse("scm polling should not detect any more changes after build", project.pollSCMChanges(listener));
+    }
+
+    /**
+     * Method name is self-explanatory.
+     */
+    public void testCommitDuringBuildCanPublishAtLeastTwice() throws Exception {
+        final String commitFile1 = "commitFile1";
+        FreeStyleProject project = setupProjectThatCommits("master",commitFile1);
+
+        // create initial commit and then run the build against it:
+        commit(commitFile1, johnDoe, "Commit number 1");
+        build(project, Result.SUCCESS, commitFile1);
+
+        build(project, Result.SUCCESS, commitFile1);
+        
+        FilePath file = workspace.child(commitFile1);
+        assertTrue("File committed during the build itself was lost. The build needs to have" +
+        		"a branch checked before strating the build", file.exists());
+        
+        
     }
 
     /**
@@ -188,6 +213,31 @@ public class GitSCMTest extends HudsonTestCase {
         assertTrue("scm polling should detect changes in 'fork' branch", project.pollSCMChanges(listener));
         build(project, Result.SUCCESS, forkFile1, forkFile2);
         assertFalse("scm polling should not detect any more changes after last build", project.pollSCMChanges(listener));
+    }
+
+    @SuppressWarnings("deprecation")
+	private FreeStyleProject setupProjectThatCommits(String branchString, String fileName) throws Exception {
+        FreeStyleProject project = createFreeStyleProject();
+        final MockStaplerRequest req = new MockStaplerRequest()
+            .setRepo(workDir.getAbsolutePath(), "origin", "")
+            .setBranch(branchString);
+        project.setScm(hudson.getScm("GitSCM").newInstance(req, null));
+        final MockStaplerRequest req2 = new MockStaplerRequest();
+        GitCommitPublisher buildStep = new GitCommitPublisher.DescriptorImpl().newInstance(req2,null);
+        project.addPublisher(buildStep);
+        ///
+        /// NOTE: This test will fail on *Nix machines.
+        /// Instead you can create a shell script builder object
+        /// and give it shell commands to do the same thing
+        /// which is to write the current time (with milliseconds)
+        /// to a file and commit it.
+        ///
+        BatchFile commitBuilder = new BatchFile(
+        		"echo %time% > " + fileName + "\n"+
+        		"git add .\n"+
+        		"git commit -a -m\"Test message\"");
+        project.getBuildersList().add(commitBuilder);
+        return project;
     }
 
     private FreeStyleProject setupSimpleProject(String branchString) throws Exception {

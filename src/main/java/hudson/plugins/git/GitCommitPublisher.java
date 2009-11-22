@@ -8,12 +8,8 @@ import hudson.FilePath.FileCallable;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
-import hudson.model.Computer;
 import hudson.model.Result;
-import hudson.plugins.git.util.BuildChooser;
 import hudson.plugins.git.util.BuildData;
-import hudson.plugins.git.util.GitUtils;
-import hudson.plugins.git.util.IBuildChooser;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.SCM;
 import hudson.tasks.BuildStepDescriptor;
@@ -38,8 +34,16 @@ import org.spearce.jgit.transport.RemoteConfig;
 public class GitCommitPublisher extends Publisher implements Serializable {
 
     private static final long serialVersionUID = 1L;
+    private String refspec;
+    private boolean disableCommit = true;
+    
+    @SuppressWarnings("deprecation")
+	private GitCommitPublisher( String refSpec, boolean disableCommit) {
+    	this.refspec = refSpec;
+    	this.disableCommit = disableCommit;
+    }
 
-    @Override
+	@Override
     public boolean needsToRunAfterFinalized() {
         return true;
     }
@@ -51,7 +55,7 @@ public class GitCommitPublisher extends Publisher implements Serializable {
     @Override
     public boolean perform(final AbstractBuild<?, ?> build, Launcher launcher, final BuildListener listener) throws InterruptedException {
 
-        final SCM scm = build.getProject().getScm();
+    	final SCM scm = build.getProject().getScm();
 
         if (!(scm instanceof GitSCM)) {
             return false;
@@ -108,16 +112,30 @@ public class GitCommitPublisher extends Publisher implements Serializable {
 									// TODO: Really? What does ** really mean
 									remoteBranch = "master";
 								}
+								
+								// Prefixing refs/heads/ will force to create the branch 
+								// remotely if it doesn't exist.
+								if( refspec == null || refspec.trim().length() == 0) {
+		                            if (gitSCM.getMergeOptions().doMerge()) {
+		                            	refspec = "HEAD:refs/heads/" + gitSCM.getMergeOptions().getMergeTarget();
+		                            } else {
+		                            	refspec = "HEAD:refs/heads/" + remoteBranch;
+		                            }
+								}
 
-								listener.getLogger().println("Commiting changes, tagging and pushing result of build number " + tag + " to "+ remoteName + ":" + remoteBranch);
+								listener.getLogger().println("Pushing result of build number " + tag + " to "+ remoteName + " " + refspec);
 
-								// Add anything new
-								git.add(".");
-
-								if (git.hasFilesToCommit()) {
-									git.commit("-a", "-m", "Build: " + tag);
+								if( disableCommit) {
+									listener.getLogger().println("Commit feature disabled.");
 								} else {
-									listener.getLogger().println("Nothing to commit. No modifications to working tree");
+									// Add anything new
+									git.add(".");
+
+									if (git.hasFilesToCommit()) {
+										git.commit("-a", "-m", "Build: " + tag);
+									} else {
+										listener.getLogger().println("Nothing to commit. No modifications to working tree");
+									}
 								}
 
 								git.tag(tag, "Build: " + tag);
@@ -130,7 +148,7 @@ public class GitCommitPublisher extends Publisher implements Serializable {
 									buildData.lastBuild.revision.setSha1(revs.get(0));
 								}
 
-								git.push(remoteURI, "HEAD:" + remoteBranch);
+								git.push(remoteURI, refspec);
 								git.push("--tags", remoteURI);
 
 								return buildData;
@@ -161,6 +179,22 @@ public class GitCommitPublisher extends Publisher implements Serializable {
         return (postCommitBuildData != null) ? true : false;
     }
 
+    public String getRefspec() {
+		return refspec;
+	}
+
+	public void setRefspec(String refspec) {
+		this.refspec = refspec;
+	}
+	
+	public boolean isDisableCommit() {
+		return disableCommit;
+	}
+
+	public void setDisableCommit(boolean disableCommit) {
+		this.disableCommit = disableCommit;
+	}
+
     @Extension
     public static class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
@@ -176,7 +210,8 @@ public class GitCommitPublisher extends Publisher implements Serializable {
         public String getHelpFile() {
             return "/plugin/git/gitCommitPublisher.html";
         }
-
+        
+        
         /**
          * Performs on-the-fly validation on the file mask wildcard.
          *
@@ -193,11 +228,17 @@ public class GitCommitPublisher extends Publisher implements Serializable {
         @Override
         public GitCommitPublisher newInstance(StaplerRequest req, JSONObject formData)
                 throws FormException {
-            return new GitCommitPublisher();
+        	
+        	String refSpec = req.getParameter("git.publish.refspec");
+        	String disableCommitStr = req.getParameter("git.publish.commit") ;
+        	boolean disableCommit = disableCommitStr != null;
+            return new GitCommitPublisher(refSpec, disableCommit);
         }
 
         public boolean isApplicable(Class<? extends AbstractProject> jobType) {
             return true;
         }
+
     }
+
 }

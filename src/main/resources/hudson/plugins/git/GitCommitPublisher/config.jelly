@@ -1,4 +1,11 @@
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
 	
+    <f:entry title="Disable commit before publish" help="/plugin/git/clean.html">
+       <f:checkbox name="git.publish.commit" checked="${instance.disableCommit}" />
+    </f:entry>
+    
+    <f:entry title="refspec for push (blank to create default) ">
+       <f:textbox name="git.publish.refspec" value="${instance.refspec}" />
+    </f:entry>
   
 </j:jelly>
