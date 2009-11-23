@@ -74,6 +74,15 @@ public class GitAPI implements IGitAPI {
         }
     }
 
+    public void initBare() throws GitException {
+        try {
+            final Repository repo = new Repository(new File(workspace.getRemote()));
+            repo.create();
+        } catch (IOException ioe) {
+            throw new GitException("Error initiating git repo.", ioe);
+        }
+    }
+    
     public boolean hasGitRepo() throws GitException {
         try {
 
@@ -200,10 +209,8 @@ public class GitAPI implements IGitAPI {
             line = reader.readLine();
             if (line == null)
                 return null;
-            listener.getLogger().println("Founds " + line);
             String line2 = reader.readLine();
             if (line2 != null) {
-                listener.getLogger().println("Founds " + line2);
                 throw new GitException("Result has multiple lines");
             }
         } catch (IOException e) {
@@ -257,13 +264,13 @@ public class GitAPI implements IGitAPI {
 
     public void changelog(String revFrom, String revTo, OutputStream fos) throws GitException {
         //log(revFrom, revTo, fos, "--name-status", "-M", "--summary", "--pretty=raw");
-        List<String> commits = getChangeLogCommits(revFrom, revTo);
+        List<String> commits = changelog(revFrom, revTo);
         for (String commit : commits) {
             logCommit(commit, fos);
         }
     }
 
-    private List<String> getChangeLogCommits(String revFrom, String revTo) throws GitException {
+    private List<String> changelog(String revFrom, String revTo) throws GitException {
         ByteArrayOutputStream commitStream = new ByteArrayOutputStream();
         log(revFrom, revTo, commitStream, "--pretty=format:%H"); // just the sha1
         BufferedReader commitReader = new BufferedReader(new StringReader(commitStream.toString()));
@@ -424,7 +431,7 @@ public class GitAPI implements IGitAPI {
     {
         // TODO: git branch -a -v --abbrev=0 would do this in one shot..
 
-        List<Branch> tags = new ArrayList<Branch>();
+        List<Branch> branches = new ArrayList<Branch>();
 
         BufferedReader rdr = new BufferedReader(new StringReader(fos));
         String line;
@@ -433,15 +440,16 @@ public class GitAPI implements IGitAPI {
                 // Ignore the 1st
                 line = line.substring(2);
                 // Ignore '(no branch)'
-                if (!line.startsWith("(")) {
-                    tags.add(new Branch(line, revParse(line)));
+                if (!line.startsWith("(") &&
+                    !line.contains("->")) {
+                    branches.add(new Branch(line, revParse(line)));
                 }
             }
         } catch (IOException e) {
             throw new GitException("Error parsing branches", e);
         }
 
-        return tags;
+        return branches;
     }
 
     public List<Branch> getBranches() throws GitException {
@@ -469,6 +477,16 @@ public class GitAPI implements IGitAPI {
     public List<Branch> getBranchesContaining(String revspec)
             throws GitException {
         return parseBranches(launchCommand("branch", "-a", "--contains", revspec));
+    }
+
+    public Branch getBranch(String revspec) throws GitException {
+    	List<Branch> branches = getBranches();
+    	for( int i=0; i<branches.size(); i++) {
+    		if( revspec.equals(branches.get(i).name)) {
+    			return branches.get(i);
+    		}
+    	}
+    	return null;
     }
 
     public void checkout(String ref) throws GitException {

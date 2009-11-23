@@ -301,7 +301,7 @@ public class GitSCM extends SCM implements Serializable {
 		try {
 			listener.getLogger().println("Fetching from " + remoteRepository.getName());
 			git.fetch(remoteRepository);
-//			git.checkout("FETCH_HEAD");
+			git.checkout("FETCH_HEAD");
 
 			/*** Submodules needs work. Better to use subtrees.
 			List<IndexEntry> submodules = new GitUtils(listener, git).getSubmodules("HEAD");
@@ -560,7 +560,6 @@ public class GitSCM extends SCM implements Serializable {
 						// a name for the branch to merge, that name is used.
 						git.checkout(mergeOptions.getMergeTarget());
 						ObjectId target = git.revParse(mergeOptions.getMergeTarget());
-						git.checkout(target.name());
 
 						try {
 							git.merge(revToBuild.getSha1().name());

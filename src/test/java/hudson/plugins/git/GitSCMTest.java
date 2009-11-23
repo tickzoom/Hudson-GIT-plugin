@@ -12,11 +12,13 @@ import hudson.tasks.BatchFile;
 import hudson.util.StreamTaskListener;
 
 import java.io.File;
+import java.util.List;
 import java.util.Set;
 
 import org.jvnet.hudson.test.CaptureEnvironmentBuilder;
 import org.jvnet.hudson.test.HudsonTestCase;
 import org.spearce.jgit.lib.PersonIdent;
+
 
 /**
  * Tests for {@link GitSCM}.
@@ -24,12 +26,19 @@ import org.spearce.jgit.lib.PersonIdent;
  */
 public class GitSCMTest extends HudsonTestCase {
 
-    private File workDir;
-    private File remoteDir;
-    private GitAPI git;
     private TaskListener listener;
     private EnvVars envVars;
+
+    private File workDir;
+    private GitAPI git;
     private FilePath workspace;
+    
+    private File bareDir;
+    private GitAPI bareGit;
+    private FilePath bareWorkspace;
+
+    private File remoteDir;
+    private GitAPI remoteGit;
     private FilePath remoteWorkspace;
 
     private final PersonIdent johnDoe = new PersonIdent("John Doe", "john@doe.com");
@@ -39,15 +48,28 @@ public class GitSCMTest extends HudsonTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         workDir = createTmpDir();
-        remoteDir = createTmpDir();
         listener = new StreamTaskListener();
         envVars = new EnvVars();
         setAuthor(johnDoe);
         setCommitter(johnDoe);
         workspace = new FilePath(workDir);
-        remoteWorkspace = new FilePath(remoteDir);
+        workspace.delete();
         git = new GitAPI("git", workspace, listener, envVars);
         git.init();
+        
+        // Remote repository to test polling.
+        bareDir = createTmpDir();
+        bareWorkspace = new FilePath(bareDir);
+        bareWorkspace.delete();
+        bareGit = new GitAPI("git", bareWorkspace, listener, envVars);
+        bareGit.initBare();
+
+        // Remote repository to test polling.
+        remoteDir = createTmpDir();
+        remoteWorkspace = new FilePath(remoteDir);
+        remoteWorkspace.delete();
+        remoteGit = new GitAPI("git", remoteWorkspace, listener, envVars);
+        remoteGit.init();
     }
 
     private void setAuthor(final PersonIdent author) {
@@ -72,12 +94,14 @@ public class GitSCMTest extends HudsonTestCase {
         // create initial commit and then run the build against it:
         final String commitFile1 = "commitFile1";
         commit(commitFile1, johnDoe, "Commit number 1");
+        pushToBare();
         build(project, Result.SUCCESS, commitFile1);
-
-        assertFalse("scm polling should not detect any more changes after build", project.pollSCMChanges(listener));
+        TaskListener sysOutListener = new StreamTaskListener(System.out);
+        assertFalse("scm polling should not detect any more changes after build", project.pollSCMChanges(sysOutListener));
 
         final String commitFile2 = "commitFile2";
         commit(commitFile2, janeDoe, "Commit number 2");
+        pushToBare();
         assertTrue("scm polling did not detect commit2 change", project.pollSCMChanges(listener));
         //... and build it...
         final FreeStyleBuild build2 = build(project, Result.SUCCESS, commitFile2);
@@ -88,25 +112,57 @@ public class GitSCMTest extends HudsonTestCase {
         assertBuildStatusSuccess(build2);
         assertFalse("scm polling should not detect any more changes after build", project.pollSCMChanges(listener));
     }
+    
+    private boolean pollSCMChanges(FreeStyleProject project) {
+        TaskListener sysOutListener = new StreamTaskListener(System.out);
+        return project.pollSCMChanges(sysOutListener);
+    }
 
     /**
      * Method name is self-explanatory.
      */
     public void testCommitDuringBuildCanPublishAtLeastTwice() throws Exception {
         final String commitFile1 = "commitFile1";
-        FreeStyleProject project = setupProjectThatCommits("master",commitFile1);
-
+        // Empty string means build any branches with changes.
+        FreeStyleProject project = setupProjectThatCommits("",commitFile1);
+        
         // create initial commit and then run the build against it:
-        commit(commitFile1, johnDoe, "Commit number 1");
+        commit(commitFile1, remoteGit, johnDoe, "Commit number 1");
+        
+        // Stick it into a feature branch.
+        remoteGit.branch("feature1");
+        remoteGit.checkout("feature1");
+        pushToBare();
+        
+      	assertFalse("scm polling cannot detect a new commit because the workspace doesn't exist yet.", pollSCMChanges(project));
+        
         build(project, Result.SUCCESS, commitFile1);
-
+        System.out.println(project.getLastBuild().getLog());
+        String log = bareGit.launchCommand("log","--pretty=oneline","integrate");
+        String[] lines = log.split("\\n");
+        String[] message = lines[0].trim().split("\\s+",2);
+        assertEquals("The Publisher never pushed the commit.","Test message",message[1]);
+        
+        ////
+        //  Do it again to make sure we don't get Non Fast Forward merge errors.
+        ////
+        
+        // create initial commit and then run the build against it:
+        final String commitFile2 = "commitFile2";
+        commit(commitFile2, remoteGit, johnDoe, "Commit number 2");
+        
+        pushToBare();
+        
+      	assertTrue("scm polling must detect a new commit after this change.", pollSCMChanges(project));
+        
         build(project, Result.SUCCESS, commitFile1);
-        
-        FilePath file = workspace.child(commitFile1);
-        assertTrue("File committed during the build itself was lost. The build needs to have" +
-        		"a branch checked before strating the build", file.exists());
-        
-        
+        System.out.println(project.getLastBuild().getLog());
+        log = bareGit.launchCommand("log","--pretty=oneline","integrate");
+        System.out.println(log);
+        lines = log.split("\\n");
+        // Using line 3 here (4th line) to make sure we got two of these commits.
+        message = lines[3].trim().split("\\s+",2);
+        assertEquals("The Publisher never pushed the commit.","Test message",message[1]);
     }
 
     /**
@@ -118,15 +174,18 @@ public class GitSCMTest extends HudsonTestCase {
         // create initial commit and then run the build against it:
         final String commitFile1 = "commitFile1";
         commit(commitFile1, johnDoe, "Commit number 1");
+        pushToBare();
         build(project, Result.SUCCESS, commitFile1);
 
+        remoteGit.branch("untracked");
+        remoteGit.checkout("untracked");
+        
         //now create and checkout a new branch:
-        git.branch("untracked");
-        git.checkout("untracked");
         //.. and commit to it:
         final String commitFile2 = "commitFile2";
-        commit(commitFile2, johnDoe, "Commit number 2");
-        assertFalse("scm polling should not detect commit2 change because it is not in the branch we are tracking.", project.pollSCMChanges(listener));
+        commit(commitFile2, remoteGit, johnDoe, "Commit number 2");
+        pushToBare();
+        assertFalse("scm polling should not detect commit2 change because it is not in the branch we are tracking.", pollSCMChanges(project));
     }
 
     /**
@@ -135,17 +194,20 @@ public class GitSCMTest extends HudsonTestCase {
      */
     public void testGitSCMCanBuildAgainstTags() throws Exception {
         final String mytag = "mytag";
-        FreeStyleProject project = setupSimpleProject(mytag);
+        FreeStyleProject project = setupSimpleProject(git,mytag);
         final String commitFile1 = "commitFile1";
         commit(commitFile1, johnDoe, "Commit number 1");
+        pushToBare();
 
         //now create and checkout a new branch:
         final String tmpBranch = "tmp";
-        git.branch(tmpBranch);
-        git.checkout(tmpBranch);
         // commit to it
         final String commitFile2 = "commitFile2";
-        commit(commitFile2, johnDoe, "Commit number 2");
+        commit(commitFile2, git, johnDoe, "Commit number 2");
+        git.branch(tmpBranch);
+        git.checkout(tmpBranch);
+        pushToBare();
+        
         assertFalse("scm polling should not detect any more changes since mytag is untouched right now", project.pollSCMChanges(listener));
         build(project, Result.FAILURE, commitFile2);
 
@@ -161,11 +223,12 @@ public class GitSCMTest extends HudsonTestCase {
         assertFalse("scm polling should not detect any more changes after last build", project.pollSCMChanges(listener));
 
         // now, create tmp branch again against mytag:
-        git.checkout(mytag);
         git.branch(tmpBranch);
+        git.checkout(tmpBranch);
         // another commit:
         final String commitFile3 = "commitFile3";
-        commit(commitFile3, johnDoe, "Commit number 3");
+        commit(commitFile3, git, johnDoe, "Commit number 3");
+        pushToBare();
         assertFalse("scm polling should not detect any more changes since mytag is untouched right now", project.pollSCMChanges(listener));
 
         // now we're going to force mytag to point to the new commit, if everything goes well, gitSCM should pick the change up:
@@ -188,28 +251,33 @@ public class GitSCMTest extends HudsonTestCase {
         final FreeStyleProject project = setupSimpleProject("");
         final String commitFile1 = "commitFile1";
         commit(commitFile1, johnDoe, "Commit number 1");
+        pushToBare();
         build(project, Result.SUCCESS, commitFile1);
 
         // create a branch here so we can get back to this point  later...
         final String fork = "fork";
-        git.branch(fork);
+        remoteGit.branch(fork);
 
         final String commitFile2 = "commitFile2";
-        commit(commitFile2, johnDoe, "Commit number 2");
+        commit(commitFile2, remoteGit, johnDoe, "Commit number 2");
+        pushToBare();
         final String commitFile3 = "commitFile3";
-        commit(commitFile3, johnDoe, "Commit number 3");
+        commit(commitFile3, remoteGit, johnDoe, "Commit number 3");
+        pushToBare();
         assertTrue("scm polling should detect changes in 'master' branch", project.pollSCMChanges(listener));
         build(project, Result.SUCCESS, commitFile1, commitFile2);
         assertFalse("scm polling should not detect any more changes after last build", project.pollSCMChanges(listener));
 
         // now jump back...
-        git.checkout(fork);
+        remoteGit.checkout(fork);
 
         // add some commits to the fork branch...
         final String forkFile1 = "forkFile1";
-        commit(forkFile1, johnDoe, "Fork commit number 1");
+        commit(forkFile1, remoteGit, johnDoe, "Fork commit number 1");
+        pushToBare();
         final String forkFile2 = "forkFile2";
-        commit(forkFile2, johnDoe, "Fork commit number 2");
+        commit(forkFile2, remoteGit, johnDoe, "Fork commit number 2");
+        pushToBare();
         assertTrue("scm polling should detect changes in 'fork' branch", project.pollSCMChanges(listener));
         build(project, Result.SUCCESS, forkFile1, forkFile2);
         assertFalse("scm polling should not detect any more changes after last build", project.pollSCMChanges(listener));
@@ -219,14 +287,15 @@ public class GitSCMTest extends HudsonTestCase {
 	private FreeStyleProject setupProjectThatCommits(String branchString, String fileName) throws Exception {
         FreeStyleProject project = createFreeStyleProject();
         final MockStaplerRequest req = new MockStaplerRequest()
-            .setRepo(workDir.getAbsolutePath(), "origin", "")
-            .setBranch(branchString);
+            .setRepo(bareDir.getAbsolutePath(), "origin", "")
+            .setBranch(branchString)
+            .setMergeTarget("integrate");
         project.setScm(hudson.getScm("GitSCM").newInstance(req, null));
         final MockStaplerRequest req2 = new MockStaplerRequest();
         GitCommitPublisher buildStep = new GitCommitPublisher.DescriptorImpl().newInstance(req2,null);
         project.addPublisher(buildStep);
         ///
-        /// NOTE: This test will fail on *Nix machines.
+        /// NOTE: This test will fail on *nix machines.
         /// Instead you can create a shell script builder object
         /// and give it shell commands to do the same thing
         /// which is to write the current time (with milliseconds)
@@ -241,9 +310,13 @@ public class GitSCMTest extends HudsonTestCase {
     }
 
     private FreeStyleProject setupSimpleProject(String branchString) throws Exception {
+       return setupSimpleProject(remoteGit,branchString);
+    }
+    
+    private FreeStyleProject setupSimpleProject(GitAPI someGit, String branchString) throws Exception {
         FreeStyleProject project = createFreeStyleProject();
         final MockStaplerRequest req = new MockStaplerRequest()
-            .setRepo(workDir.getAbsolutePath(), "origin", "")
+            .setRepo(someGit.workspace.toString(), "origin", "")
             .setBranch(branchString);
         project.setScm(hudson.getScm("GitSCM").newInstance(req, null));
         project.getBuildersList().add(new CaptureEnvironmentBuilder());
@@ -252,8 +325,10 @@ public class GitSCMTest extends HudsonTestCase {
 
     private FreeStyleBuild build(final FreeStyleProject project, final Result expectedResult, final String...expectedNewlyCommittedFiles) throws Exception {
         final FreeStyleBuild build = project.scheduleBuild2(0, new Cause.UserCause()).get();
+        String log = project.getBuilds().get(0).getLog();
         for(final String expectedNewlyCommittedFile : expectedNewlyCommittedFiles) {
-            assertTrue(project.getWorkspace().child(expectedNewlyCommittedFile).exists());
+            assertTrue("After build check for file failed for " + expectedNewlyCommittedFile +
+            		"\nThe project log file follows:\n" + log, project.getWorkspace().child(expectedNewlyCommittedFile).exists());
         }
         if(expectedResult != null) {
             assertBuildStatus(expectedResult, build);
@@ -262,15 +337,33 @@ public class GitSCMTest extends HudsonTestCase {
     }
 
     private void commit(final String fileName, final PersonIdent committer, final String message) throws GitException {
+    	commit(fileName, remoteGit, committer, message);
+    }
+    
+    private void commit(final String fileName, GitAPI someGit, final PersonIdent committer, final String message) throws GitException {
         setAuthor(committer);
         setCommitter(committer);
-        FilePath file = workspace.child(fileName);
+        FilePath file = someGit.workspace.child(fileName);
         try {
             file.write(fileName, null);
         } catch (Exception e) {
             throw new GitException("unable to write file", e);
         }
-        git.add(fileName);
-        git.launchCommand("commit", "-m", message);
+        someGit.add(fileName);
+        someGit.launchCommand("commit", "-m", message);
+    	System.out.println("==Remote branches:==");
+        List<Branch> branches = someGit.getBranches();
+        for( int i=0; i<branches.size(); i++) {
+        	System.out.println(branches.get(i).name);
+        }
+    	System.out.println("==Bare branches:==");
+        branches = bareGit.getBranches();
+        for( int i=0; i<branches.size(); i++) {
+        	System.out.println(branches.get(i).name);
+        }
+    }
+    
+    private void pushToBare() throws GitException {
+    	remoteGit.push(bareDir.getAbsolutePath(),"HEAD");
     }
 }
