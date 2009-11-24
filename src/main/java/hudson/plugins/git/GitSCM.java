@@ -81,6 +81,11 @@ public class GitSCM extends SCM implements Serializable {
 	 */
 	private List<BranchSpec> branches;
 
+	/**
+	 * All the branches that wish to exclude from building.
+	 */
+	private List<BranchSpec> excludeBranches;
+	
     /**
 	 * Options for merging before a build.
 	 */
@@ -106,6 +111,7 @@ public class GitSCM extends SCM implements Serializable {
 	public GitSCM(
 	        List<RemoteConfig> repositories,
 	        List<BranchSpec> branches,
+	        List<BranchSpec> excludeBranches,
 	        PreBuildMergeOptions mergeOptions,
 	        boolean doGenerateSubmoduleConfigurations,
 	        Collection<SubmoduleConfig> submoduleCfg,
@@ -114,6 +120,7 @@ public class GitSCM extends SCM implements Serializable {
 
 		// normalization
 	    this.branches = branches;
+	    this.excludeBranches = excludeBranches;
 
 		this.remoteRepositories = repositories;
 		this.browser = browser;
@@ -152,6 +159,9 @@ public class GitSCM extends SCM implements Serializable {
 
 		   if( branch != null )
 	       {
+			   if( branch.length() == 0) {
+				   branch = "**";
+			   }
 	    	   branches.add(new BranchSpec(branch));
 	       }
 	       else
@@ -303,28 +313,28 @@ public class GitSCM extends SCM implements Serializable {
 			git.fetch(remoteRepository);
 			git.checkout("FETCH_HEAD");
 
-			/*** Submodules needs work. Better to use subtrees.
-			List<IndexEntry> submodules = new GitUtils(listener, git).getSubmodules("HEAD");
-
-			for (IndexEntry submodule : submodules) {
-				try {
-					RemoteConfig submoduleRemoteRepository = getSubmoduleRepository(remoteRepository, submodule.getFile());
-
-					File subdir = new File(workspace, submodule.getFile());
-					IGitAPI subGit = new GitAPI(git.getGitExe(), new FilePath(subdir),
-							listener, git.getEnvironment());
-
-					subGit.fetch(submoduleRemoteRepository);
-				} catch (Exception ex) {
-					listener
-							.error(
-									"Problem fetching from "
-											+ remoteRepository.getName()
-											+ " - could be unavailable. Continuing anyway");
+			if (git.hasGitModules()) {
+				List<IndexEntry> submodules = new GitUtils(listener, git).getSubmodules("FETCH_HEAD");
+	
+				for (IndexEntry submodule : submodules) {
+					try {
+						RemoteConfig submoduleRemoteRepository = getSubmoduleRepository(remoteRepository, submodule.getFile());
+	
+						File subdir = new File(workspace, submodule.getFile());
+						IGitAPI subGit = new GitAPI(git.getGitExe(), new FilePath(subdir),
+								listener, git.getEnvironment());
+	
+						subGit.fetch(submoduleRemoteRepository);
+					} catch (Exception ex) {
+						listener
+								.error(
+										"Problem fetching from "
+												+ remoteRepository.getName()
+												+ " - could be unavailable. Continuing anyway");
+					}
+	
 				}
-
 			}
-			***/
 		} catch (GitException ex) {
 			listener.error(
 					"Problem fetching from " + remoteRepository.getName()
@@ -553,11 +563,12 @@ public class GitSCM extends SCM implements Serializable {
 						if( !foundMergeBranch) {
 							git.branch(mergeOptions.getMergeTarget());
 						}
-						// NOTE: This is critical to have an actual branch checked
+						// NOTE: This is critical to have an actual named branch checked
 						// out rather than only a commit so that the merge result
 						// will work even when the build itself also commits before
-						// the publish runs (if enabled). Since the user provides
-						// a name for the branch to merge, that name is used.
+						// the publisher runs (if enabled). Otherwise, commits by the
+						// build get lost. Anyway, since the user provides the
+						// name for a branch to do merge, that name serves he purpose.
 						git.checkout(mergeOptions.getMergeTarget());
 						ObjectId target = git.revParse(mergeOptions.getMergeTarget());
 
@@ -810,12 +821,26 @@ public class GitSCM extends SCM implements Serializable {
             String[] branchData = req.getParameterValues("git.branch");
             for( int i=0; i<branchData.length;i++ )
             {
+            	if( branchData[i].length() == 0) {
+            		branchData[i] = "**";
+            	}
                 branches.add(new BranchSpec(branchData[i]));
             }
 
             if( branches.size() == 0 )
             {
             	branches.add(new BranchSpec("*/master"));
+            }
+            
+			String[] excludeBranchData = req.getParameterValues("git.exclude.branch");
+            List<BranchSpec> excludeBranches = new ArrayList<BranchSpec>();
+            if( excludeBranchData != null ) {
+	            for( int i=0; i<excludeBranchData.length;i++ )
+	            {
+	            	if( excludeBranchData[i].length() != 0) {
+	            		excludeBranches.add(new BranchSpec(excludeBranchData[i]));
+	            	}
+	            }
             }
 
             PreBuildMergeOptions mergeOptions = new PreBuildMergeOptions();
@@ -846,6 +871,7 @@ public class GitSCM extends SCM implements Serializable {
 			return new GitSCM(
 					remoteRepositories,
 					branches,
+					excludeBranches,
 					mergeOptions,
 				    req.getParameter("git.generate") != null,
 					submoduleCfg,
@@ -900,6 +926,11 @@ public class GitSCM extends SCM implements Serializable {
     public List<BranchSpec> getBranches()
     {
         return branches;
+    }
+
+    public List<BranchSpec> getExcludeBranches()
+    {
+        return excludeBranches;
     }
 
     public PreBuildMergeOptions getMergeOptions()

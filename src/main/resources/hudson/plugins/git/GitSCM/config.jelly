@@ -15,8 +15,7 @@
 	             <f:textbox name="git.repo.name" value="${repo.name}" />
 	           </f:entry>
 	           
-	           
-	           <f:entry title="Refspec (blank to create default)">
+	           <f:entry title="Refspec (blank to create default of all repositories)">
 	              <f:textbox name="git.repo.refspec" value="${repo.fetchRefSpecs.get(0)}" />
 	           </f:entry>
 	           
@@ -33,16 +32,16 @@
    </f:entry>
   
   <f:entry title="Branches to build" help="/plugin/git/branch.html">
-  <f:repeatable var="branch" name="branch" varStatus="branchStatus" items="${scm.branches}" minimum="1" noAddButton="false">
+  	<f:repeatable var="branch" name="branch" varStatus="branchStatus" items="${scm.branches}" minimum="1" noAddButton="false">
            <table width="100%">
-               <f:entry title="Branch Specifier (blank for default):">
+               <f:entry title="Branch Specifier (blank for default ** for all branches):">
                     <f:textbox name="git.branch" value="${branch.name}" />
                </f:entry>
                
                <f:entry>
-            <div align="right">
-                <input type="button" value="Delete Branch" class="repeatable-delete" style="margin-left: 1em;" />
-            </div>
+	            <div align="right">
+	                <input type="button" value="Delete Branch" class="repeatable-delete" style="margin-left: 1em;" />
+	            </div>
           </f:entry>
                
            </table>
@@ -51,6 +50,25 @@
   
   </f:entry>
 
+  <f:entry title="Branches to exclude" help="/plugin/git/branch.html">
+  		<f:repeatable var="branch" name="excludeBranch" varStatus="excludeBranchStatus" items="${scm.excludeBranches}" minimum="1" noAddButton="false">
+           <table width="100%">
+               <f:entry title="Exclude Branch Specifier:">
+                    <f:textbox name="git.exclude.branch" value="${branch.name}" />
+               </f:entry>
+               
+               <f:entry>
+            <div align="right">
+                <input type="button" value="Delete Exclude Branch" class="repeatable-delete" style="margin-left: 1em;" />
+            </div>
+          </f:entry>
+               
+           </table>
+          
+        </f:repeatable>
+  
+  </f:entry>
+  
   <f:advanced>
          <!-- This needs more thought
   <f:entry title="Autogenerate submodule configurations">

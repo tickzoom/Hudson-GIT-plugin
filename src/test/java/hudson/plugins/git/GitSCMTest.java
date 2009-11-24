@@ -5,6 +5,7 @@ import hudson.FilePath;
 import hudson.model.Cause;
 import hudson.model.FreeStyleBuild;
 import hudson.model.FreeStyleProject;
+import hudson.model.Project;
 import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.model.User;
@@ -53,9 +54,9 @@ public class GitSCMTest extends HudsonTestCase {
         setAuthor(johnDoe);
         setCommitter(johnDoe);
         workspace = new FilePath(workDir);
-        workspace.delete();
-        git = new GitAPI("git", workspace, listener, envVars);
-        git.init();
+// Let the plugin create the hudson workspace otherwise, we can't find
+// regression errors when it's ability to create one from scratch breaks.
+// And start from scratch was broken for on the fork with GitCommitPublisher.
         
         // Remote repository to test polling.
         bareDir = createTmpDir();
@@ -124,7 +125,7 @@ public class GitSCMTest extends HudsonTestCase {
     public void testCommitDuringBuildCanPublishAtLeastTwice() throws Exception {
         final String commitFile1 = "commitFile1";
         // Empty string means build any branches with changes.
-        FreeStyleProject project = setupProjectThatCommits("",commitFile1);
+        FreeStyleProject project = setupProjectThatCommits("","",commitFile1);
         
         // create initial commit and then run the build against it:
         commit(commitFile1, remoteGit, johnDoe, "Commit number 1");
@@ -139,32 +140,72 @@ public class GitSCMTest extends HudsonTestCase {
         build(project, Result.SUCCESS, commitFile1);
         System.out.println(project.getLastBuild().getLog());
         String log = bareGit.launchCommand("log","--pretty=oneline","integrate");
-        String[] lines = log.split("\\n");
-        String[] message = lines[0].trim().split("\\s+",2);
-        assertEquals("The Publisher never pushed the commit.","Test message",message[1]);
+        assertTrue("The Publisher never pushed the commit.",log.contains("Test message"));
         
+      	assertFalse("scm polling should not detect a new commit because the build completed.", pollSCMChanges(project));
+      	
         ////
         //  Do it again to make sure we don't get Non Fast Forward merge errors.
         ////
         
         // create initial commit and then run the build against it:
         final String commitFile2 = "commitFile2";
+        remoteGit.checkout("feature1");
         commit(commitFile2, remoteGit, johnDoe, "Commit number 2");
         
         pushToBare();
         
       	assertTrue("scm polling must detect a new commit after this change.", pollSCMChanges(project));
         
-        build(project, Result.SUCCESS, commitFile1);
+        build(project, Result.SUCCESS, commitFile2);
         System.out.println(project.getLastBuild().getLog());
         log = bareGit.launchCommand("log","--pretty=oneline","integrate");
-        System.out.println(log);
-        lines = log.split("\\n");
-        // Using line 3 here (4th line) to make sure we got two of these commits.
-        message = lines[3].trim().split("\\s+",2);
-        assertEquals("The Publisher never pushed the commit.","Test message",message[1]);
+        assertTrue("The Publisher never pushed the commit.",log.contains("Test message"));
+        
+      	assertFalse("scm polling must not find a change.", pollSCMChanges(project));
     }
 
+    /**
+     * Method name is self-explanatory.
+     */
+    public void testExclusionOfBranchToBuild() throws Exception {
+        final String commitFile1 = "commitFile1";
+        // Empty string means build any branches with changes.
+        String excludeBranch = "exludeMe";
+        FreeStyleProject project = setupProjectThatCommits("",excludeBranch,commitFile1);
+        
+        // create initial commit and then run the build against it:
+        commit(commitFile1, remoteGit, johnDoe, "Commit number 1");
+        
+        // Stick it into a feature branch.
+        remoteGit.branch("feature1");
+        remoteGit.checkout("feature1");
+        pushToBare();
+        
+      	assertFalse("scm polling cannot detect a new commit because the workspace doesn't exist yet.", pollSCMChanges(project));
+        
+        build(project, Result.SUCCESS, commitFile1);
+        System.out.println(project.getLastBuild().getLog());
+        String log = bareGit.launchCommand("log","--pretty=oneline","integrate");
+        assertTrue("The Publisher never pushed the commit.",log.contains("Test message"));
+        
+      	assertFalse("scm polling should not detect a new commit because the build completed.", pollSCMChanges(project));
+      	
+        ////
+        //  Do it again to make sure we don't get Non Fast Forward merge errors.
+        ////
+        
+        // create initial commit and then run the build against it:
+        final String commitFile2 = "commitFile2";
+        remoteGit.branch(excludeBranch);
+        remoteGit.checkout(excludeBranch);
+        commit(commitFile2, remoteGit, johnDoe, "Commit number 2");
+        
+        pushToBare();
+        
+      	assertFalse("scm polling must not detect a commit to the excluded branch.", pollSCMChanges(project));
+    }
+    
     /**
      * Method name is self-explanatory.
      */
@@ -193,6 +234,11 @@ public class GitSCMTest extends HudsonTestCase {
      * regression has been fixed.
      */
     public void testGitSCMCanBuildAgainstTags() throws Exception {
+    	// This test assumes we alredy have a repository.
+    	// That makes sense for tags since the build creates
+    	// them, we must already have a repository.
+        git = new GitAPI("git", workspace, listener, envVars);
+    	git.init();
         final String mytag = "mytag";
         FreeStyleProject project = setupSimpleProject(git,mytag);
         final String commitFile1 = "commitFile1";
@@ -284,12 +330,14 @@ public class GitSCMTest extends HudsonTestCase {
     }
 
     @SuppressWarnings("deprecation")
-	private FreeStyleProject setupProjectThatCommits(String branchString, String fileName) throws Exception {
+	private FreeStyleProject setupProjectThatCommits(String branchString, String excludeBranch, String fileName) throws Exception {
         FreeStyleProject project = createFreeStyleProject();
         final MockStaplerRequest req = new MockStaplerRequest()
             .setRepo(bareDir.getAbsolutePath(), "origin", "")
             .setBranch(branchString)
-            .setMergeTarget("integrate");
+            .setExcludeBranch(excludeBranch)
+            .setMergeTarget("integrate")
+            .setGitClean("true");
         project.setScm(hudson.getScm("GitSCM").newInstance(req, null));
         final MockStaplerRequest req2 = new MockStaplerRequest();
         GitCommitPublisher buildStep = new GitCommitPublisher.DescriptorImpl().newInstance(req2,null);
@@ -301,20 +349,26 @@ public class GitSCMTest extends HudsonTestCase {
         /// which is to write the current time (with milliseconds)
         /// to a file and commit it.
         ///
+        String repository = bareGit.workspace.toString();
         BatchFile commitBuilder = new BatchFile(
         		"echo %time% > " + fileName + "\n"+
         		"git add .\n"+
-        		"git commit -a -m\"Test message\"");
+        		"git commit -a -m\"Test message\"\n"+
+        		"git push " + repository + " HEAD:refs/heads/integrate");
         project.getBuildersList().add(commitBuilder);
         return project;
     }
 
     private FreeStyleProject setupSimpleProject(String branchString) throws Exception {
-       return setupSimpleProject(remoteGit,branchString);
+    	FreeStyleProject project = setupSimpleProject(remoteGit,branchString);
+    	return project;
     }
     
     private FreeStyleProject setupSimpleProject(GitAPI someGit, String branchString) throws Exception {
         FreeStyleProject project = createFreeStyleProject();
+    	if( project.getWorkspace() != null) {
+    		project.getWorkspace().delete();
+    	}
         final MockStaplerRequest req = new MockStaplerRequest()
             .setRepo(someGit.workspace.toString(), "origin", "")
             .setBranch(branchString);

@@ -72,6 +72,10 @@ public class MockStaplerRequest implements StaplerRequest {
         return put("git.branch", branch);
     }
 
+    public MockStaplerRequest setExcludeBranch(String branch) {
+        return put("git.exclude.branch", branch);
+    }
+
     public MockStaplerRequest setMergeTarget(String mergeTarget) {
         return put("git.mergeTarget", mergeTarget);
     }

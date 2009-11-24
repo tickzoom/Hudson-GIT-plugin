@@ -114,7 +114,8 @@ public class GitPublisher extends Publisher implements Serializable {
         return canPerform;
     }
 
-    @Extension
+//    Commenting this annotation removes it from the GUI
+//    @Extension
     public static class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
         public DescriptorImpl() {

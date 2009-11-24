@@ -137,6 +137,7 @@ public class BuildChooser implements IBuildChooser {
             {
                 Branch b = j.next();
                 boolean keep = false;
+                // Inclusions
                 for (BranchSpec bspec : gitSCM.getBranches())
                 {
                     if (bspec.matches(b.getName()))
@@ -145,7 +146,6 @@ public class BuildChooser implements IBuildChooser {
                         break;
                     }
                 }
-
                 if (!keep) j.remove();
 
             }
@@ -157,6 +157,31 @@ public class BuildChooser implements IBuildChooser {
         // 3. We only want 'tip' revisions
         revs = utils.filterTipBranches(revs);
 
+        // 4. Filter out any excluded revisions. Note, this must come
+        // after verifying which ones are 'tip' revisions.
+        for (Iterator<Revision> i = revs.iterator(); i.hasNext();)
+        {
+            Revision r = i.next();
+
+            // filter out uninteresting branches
+            for (Iterator<Branch> j = r.getBranches().iterator(); j.hasNext();)
+            {
+                Branch b = j.next();
+                boolean exclude = false;
+                // Exclusions
+                for (BranchSpec bspec : gitSCM.getExcludeBranches())
+                {
+                    if (bspec.matches(b.getName()))
+                    {
+                        exclude = true;
+                        break;
+                    }
+                }
+                if (exclude) j.remove();
+            }
+            if (r.getBranches().size() == 0) i.remove();
+        }
+        
         // 4. Finally, remove any revisions that have already been built.
         for (Iterator<Revision> i = revs.iterator(); i.hasNext();)
         {

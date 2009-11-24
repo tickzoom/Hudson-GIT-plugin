@@ -37,8 +37,6 @@ public class BranchSpec implements Serializable
     {
         if( name == null )
             throw new IllegalArgumentException();
-        else if( name.length() == 0 )
-            this.name = "**";
         else
             this.name = name;
     }
